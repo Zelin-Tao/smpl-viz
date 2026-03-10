@@ -64,10 +64,16 @@ smpl-viz /path/to/motions/
 | `→ / L` | Step forward one frame (paused) |
 | `[ / ,` | Slow down |
 | `] / .` | Speed up |
-| `R` | Restart current clip |
+| `Q` | Restart current clip |
 | `N` | Next clip |
 | `P` | Previous clip |
-| `Q / Esc` | Quit |
+| `Esc` | Quit |
+
+## Notes
+
+- Supports both SMPL-H (156-dim poses) and SMPL-X (165-dim poses) formatted `.npz` files
+- Single file mode: playback freezes on the last frame, press `Q` to replay or `Esc` to quit
+- Directory mode: navigate between clips with `N` / `P`
 
 ## Python API
 

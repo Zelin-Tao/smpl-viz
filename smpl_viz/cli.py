@@ -12,10 +12,10 @@ Keybindings:
     → / L        step forward one frame  (paused)
     [ / ,        slow down
     ] / .        speed up
-    R            restart clip
+    Q            restart clip
     N            next clip
     P            previous clip
-    Q / Esc      quit
+    Esc          quit
 """
 import glob
 import sys
@@ -34,8 +34,9 @@ def main():
     if osp.isfile(target) and target.endswith('.npz'):
         print(f"Loading: {target}")
         p = MotionPlayer(target)
-        p.play(loop=False)
-        p.close()
+        # hold_on_end=True: pause on last frame, wait for R (replay) or Q (quit)
+        p.play(loop=False, hold_on_end=True)
+        sys.exit(0)
 
     elif osp.isdir(target):
         files = sorted(glob.glob(osp.join(target, "*.npz")))

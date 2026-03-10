@@ -1,3 +1,4 @@
+import sys
 """
 player.py — MuJoCo-based motion player with keyboard controls.
 
@@ -9,8 +10,8 @@ Keybindings (active while the viewer window is focused):
   [  / ,      slow down (×0.8)
   N           next clip  (folder mode)
   P           previous clip (folder mode)
-  R           restart current clip from frame 0
-  Q / Esc     quit
+  Q           restart current clip from frame 0
+  Esc         quit
 """
 
 import time
@@ -31,7 +32,7 @@ _KEY_LEFT  = 263
 _KEY_ESC   = 256
 _KEY_N     = ord('N')
 _KEY_P     = ord('P')
-_KEY_R     = ord('R')
+_KEY_Q = ord("Q")
 _KEY_Q     = ord('Q')
 _KEY_J     = ord('J')
 _KEY_L     = ord('L')
@@ -96,7 +97,7 @@ class MotionPlayer:
                 self.speed = max(self.speed * 0.8, 0.1)
                 print(f"  speed: {self.speed:.2f}x")
 
-            elif keycode == _KEY_R:
+            elif keycode == _KEY_Q:
                 self.frame_idx = 0
                 self.paused    = False
 
@@ -106,7 +107,7 @@ class MotionPlayer:
             elif keycode == _KEY_P:
                 self._cmd_prev = True
 
-            elif keycode in (_KEY_Q, _KEY_ESC):
+            elif keycode == _KEY_ESC:
                 self._cmd_quit = True
 
     def _render_frame(self, idx):
@@ -114,10 +115,15 @@ class MotionPlayer:
         mujoco.mj_forward(self.mj_model, self.mj_data)
         self._viewer.sync()
 
-    def play(self, loop=False):
-        """Run the playback loop. Returns: 'next' | 'prev' | 'quit' | 'done'."""
+    def play(self, loop=False, hold_on_end=False):
+        """Run the playback loop. Returns: 'next' | 'prev' | 'quit' | 'done'.
+
+        hold_on_end: if True, freeze on the last frame and wait for
+                     Q (replay from frame 0) or Esc (quit).
+        """
         self.frame_idx = 0
         self.paused    = False
+        _holding       = False
 
         while self._viewer.is_running():
             with self._lock:
@@ -129,6 +135,13 @@ class MotionPlayer:
                 if self._cmd_prev:
                     self._cmd_prev = False
                     return 'prev'
+                if _holding and not self.paused:
+                    # Q was pressed in _on_key: frame_idx reset to 0, paused set False
+                    _holding = False
+
+            if _holding:
+                time.sleep(0.02)
+                continue
 
             if not self.paused:
                 t0 = time.time()
@@ -138,47 +151,55 @@ class MotionPlayer:
                 if self.frame_idx >= self.n_frames:
                     if loop:
                         self.frame_idx = 0
+                    elif hold_on_end:
+                        self.frame_idx = self.n_frames - 1
+                        self.paused = True
+                        _holding = True
+                        print("  End of clip — Q=replay  Esc=quit")
                     else:
                         return 'done'
-
-                budget = 1.0 / (self.base_fps * self.speed)
-                elapsed = time.time() - t0
-                if budget > elapsed:
-                    time.sleep(budget - elapsed)
+                else:
+                    budget = 1.0 / (self.base_fps * self.speed)
+                    elapsed = time.time() - t0
+                    if budget > elapsed:
+                        time.sleep(budget - elapsed)
             else:
                 time.sleep(0.02)
 
         return 'quit'
 
     def close(self):
-        self._viewer.close()
+        try:
+            if self._viewer.is_running():
+                self._viewer.close()
+        except Exception:
+            pass
 
 
 def run_playlist(npz_files, target_height=None):
     """Cycle through a list of .npz files with N / P navigation."""
-    idx    = 0
-    player = None
+    idx = 0
 
     while 0 <= idx < len(npz_files):
         path = npz_files[idx]
         print(f"[{idx + 1}/{len(npz_files)}]  {path}")
-        print("  Space=pause  ←/→=step  [/]=speed  R=restart  N=next  P=prev  Q=quit")
+        print("  Space=pause  ←/→=step  [/]=speed  Q=restart  N=next  P=prev  Esc=quit")
 
         try:
-            if player is not None:
-                player.close()
             player = MotionPlayer(path, target_height)
             result = player.play(loop=False)
+            # Only call close() when the user explicitly navigates away (N/P/Q).
+            # On natural playback end ('done'), the GL context is already gone;
+            # skip close() to avoid GLXBadContext segfault.
+            if result != 'done':
+                player.close()
         except Exception as exc:
             print(f"  Error: {exc}, skipping...")
             result = 'next'
 
         if result == 'quit':
-            break
+            sys.exit(0)
         elif result in ('next', 'done'):
             idx += 1
         elif result == 'prev':
             idx = max(idx - 1, 0)
-
-    if player is not None:
-        player.close()
